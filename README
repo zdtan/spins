@@ -1,0 +1,432 @@
+20160210
+make tweaks to allow many spin configurations to be saved
+- static correlations calculated for each spin configuration in folder, saved together with the spin configuration
+- also output all static correlations calculated into a csv file for averaging, etc.
+- running MD will be based on individual spin configuration, with results saved with the spin configuration
+- then in next step, similar function will likewise go through all spin configurations in folder and extract MD results (check/assume MD already run)
+
+
+20140827
+merge code with spinwave code for simulated annealing
+looks like just need "basic" code
+
+
+20140703
+tweak SCGA scripts for proper resolution for different exponents.
+ScriptSolveSCGA, ScriptAverageSCGA, 	ScriptCollapseSCGA
+
+
+20140606
+revamp SCGA scripts
+integrate all to fixed time, independent of beta
+when scaling, different beta will have different plot runs
+
+
+20140514
+use the existing spin configurations from K=J_1
+and do scaling test tT^2 (SCGA) and match with spin waves.
+- write new script for each comparison
+
+
+20140429
+
+GenerateTS2 and ScriptConfig2 for delta0 = 0.5 instead of 0.9
+
+rename ScriptMaster to ScriptConfig
+save the MC configuration during annealing steps
+vary the totalM term - let constrainM accept a number instead
+output totalM at start of MD in filename when plotting variation of totalM with time
+use Tmesh = 1000 as variable (set value in Scripts)
+
+
+20140422
+
+**serious problems with random number generation
+- getting repeats!
+- need to execute the rng('shuffle') command once in your MATLAB session before calling any of the random number functions.
+[http://www.mathworks.com/help/matlab/math/generate-random-numbers-that-are-different.html]
+- put this in ScriptMaster (use GenerateTS to save rng settings)
+
+**No problem with generating random numbers within a sphere
+[http://www.mathworks.com/help/matlab/math/numbers-placed-randomly-within-volume-of-sphere.html]
+elevation angle is NOT uniformly distributed!
+(whew, this was already accounted for...)
+
+rvals = 2*rand(1000,1)-1;
+elevation = asin(rvals);
+azimuth = 2*pi*rand(1000,1);
+radii = 3*(rand(1000,1).^(1/3));
+[x,y,z] = sph2cart(azimuth,elevation,radii);
+
+**modify
+RandomSpin.m to generate array of random spins
+GenerateRS.m primarily for scaling length of triangular lattice spins
+MonteCarlo.m to generate array of random spins at start of each sweep,
+	and use those to "disturbSpin". The subfunction disturbSpin to have syntax
+	spin2 = disturbSpin(spin1,delta,spinX)
+ScriptMaster.m to include rng('shuffle')
+GenerateTS.m to save sinit = rng in spinfile
+
+
+===================================
+
+
+**for MC annealing, should have used ceil instead of floor
+to decide how many steps to do!!!**
+change starting delta0 (step size) to 1 instead of 1.1
+and scale step size by T^(2/3) instead of T^(1/2)
+** also calculate acceptance ratio in MonteCarlo.m only for 2nd half of run
+(so impose minimum of 2000 flips)
+
+
+don't know if modification in MonteCarlo.m to use columns of Jmat instead of rows makes a difference (no need to change, version of MATLAB can deal with it) - bottleneck seems to be in the MD portion?
+
+Modify IntegrateEOM.m
+boost RelTol to 10^(-15) from 10^(-12)? minimum is 2e-14
+%% this will help keep file sizes constrained for larger systems...
+%tspan = [t0,t1,...,tf];
+tspan = linspace(0,Tmax,1000);	% keep 1000 points consistently
+[T,Y] = solver(odefun,tspan,y0,options)
+
+
+need to modify the Monte Carlo code
+so that it does NOT calculate local field for all sites all over again
+once a single spin is flipped...
+calculate LocalField with vector-matrix multiplication...
+(1 x N) * (N x 3) = (1 x 3)
+
+** should use sparse matrix? yes, for AdjacencyMatrix! - also, don't keep running AdjacencyMatrix function but pass the result on to following functions...
+** also reduce MC step-size from 1.5 to 1.1 to increase acceptance ratio
+
+====================
+use '-v7.3' instead of '-mat' in the save, as some problems with saving large files
+(gets skipped over instead!)
+
+
+note that energy is calculate PER spin
+while totalM is calculated for entire system, so totalM on order of 1 is not large
+
+in GenerateTS, scale MC step by sqrt(T) as described in Appendix of Conlon thesis,
+	which referenced Moessner's thesis
+set relTol 1e-12 for ode45
+Systems: 4x4x4 has 512 spins
+5x5x5 has 1000 spins
+8x8x8 has 4096 spins
+(also do 7x7x5 which has 1960 spins)
+
+** MD more or less working, and quite quickly
+7 min for MC and 20 min for EOM with system size of about 2000 spins
+ and about 100-1000 MC moves per spin at each step in simulated annealing.
+filesize about 300 MB, though can cut down (to about 200 MB) by saving less stuff.
+- keep better track of "delta" and "acceptance" in MC procedure
+- enhance number of MC moves by factor of 10 (so working on 1000 to 10000 sweeps each time)
+- increase system sizes
+- distinguish kagome and triangular sites for autocorrelation
+- note that MC algorithm includes the total magnetisation term
+
+MD version (spins all stored as matrices, not Spin objects)
+- SiteIndex1D, SiteIndex4D unchanged
+- AdjacencyMatrix
+- MonteCarlo (series of sweeps)
+- RandomSpin (single)
+- GenerateRS (lattice)
+- GenerateTS (lattice, automatic MC annealing)
+- MeasureSpins
+- IntegrateEOM
+- AutocorrelationFunction
+
+
+** want to write everything in terms of Nx3 matrices representing spins
+** actually, just do a simple conversion as and when needed...
+
+
+Molecular dynamics
+** use Monte Carlo to generate configurations S(0)
+- need to modify to get total spin zero? [don't modify first]
+** use RK45 to calculate S(t+dt) at various time-steps 
+[Conlon used dt = 0.8 J^{-1} to get maximum 3.92 J. Adaptive step size, relative errors to 10^{-6}.]
+[Moessner - choose time step so energy conserved to 10^{-8}. T = 0.5 to 5x10^{-4}. 32 to 2048 spins.
+Add term J M^2 to hamiltonian, total magnetisation M.]
+** calculate autocorrelation function
+
+=====================================
+
+** this version has StructureFactorFull
+** also add MapPlaneCheck - uses data file
+and StepSWSF to automate (includes AggregateSWSF to combine different ground states - and call MapPlaneCheck on final file)
+** original MapPlane and ScanLine also updated (with K=L) for all planes and lines
+* think thickness should be orthogonal? but that would be too far away...
+actually, for hhl, thickness should be along QB (these planes are *nearest*).
+for h0l, thickness along QB also (these planes are *nearest*).
+
+
+** actually better use proper definition of reciprocal lattice vectors,
+	and not just the conventional definitions!!! **
+for hk-2 plane, changed mapplane to produce rhombus instead
+need to hack legacy version of changes with K=L for skinny
+idea is to compare if main reason for loss of symmetry is wrong choice of plotted coordinates.
+need to change formfactor also
+
+
+# missed out extra factor of \sqrt{S_i S_j} for structure factor
+#	need to redo all plots... take opportunity to average over thickness for planes.
+
+
+***** add in Step3A, Step4A, Step4B
+and the FormFactor, FormFactorLogDispersion, LogDispersion files to the README.pdf
+
+
+** revise writeup to redefine "shattered field" as copies of identity.
+** measure toc1, toc2, etc.
+** measure shattered field
+** redo numerical experiments and report results
+*** analytically: figure out lagrange multipliers
+
+
+Step1: GenerateGS
+Step2: SpinWaves
+Step3: MapPlane
+Step4: FollowLine
+
+- multipliers need to be length of local field and not scalar product.
+- this will give L_i S_i instead of L_i S_i^2.
+** after this correction, 0.1% shattered field already works (but not 0.01% shattered field)
+** want to figure out why for a1.5s0.667 the multiplier is 6 on triangular and 2 on kagome - why need this for ground state.
+*** change Stiffness to calculate minimum shatter to use, which then is used in the next steps!!!
+
+** modify Lagrange multipler related calculations in MeasureGS (unshattered) and in P,Q matrices (shattered)!
+* figure out that MeasureGS does not have to return the localField.
+* end up modifying GenerateGS also which calls MeasureGS, 
+	also so that GenerateGS does not return localField (nor spins!) but returns multipliers instead
+* SpinWaves, Stiffness, SolveSystem also don't need spins and localField, nor multipliers:
+	shatter already incorporated in P,Q matrices!
+** change convention for AdjacencyMatrix so that POSITIVE for AFM (opposite to Walker-Walsdedt!)
+** need to fix MapPlane also
+
+*** need to delink PQ from GenerateGS? easiest to create PQ immediately - but shatter must be appropriate!!
+  thus, GenerateGS returns spins, then CreateMatricesPQ and Solve...
+maybe to keep PQ separate with shatter is better.
+
+
+
+** do follow line
+** check mapplane2
+** check StepN scripts
+** check f44 scripts
+
+
+** GenerateGS now saves with sigma in filename, Step1b loads with sigma in filename: need to deconflict later on if rerunning!!! **
+
+plan: L = 4, M = 4 (four MC configurations)
+shatter = 0.05 (using projection method). not enough? try 0.06.
+maybe need 0.1 shatter, or even more! up to 0.25 even...
+
+30, 12, 50 mins for planes
+
+a = 0.5, s = 1 (pyrochlore) - 0.06
+a = 0.5, s = 2
+a = 0.5, s = 0.5 - 0.2
+a = 0.75, s = 2 (ordered?) - 0.33
+a = 0.75, s = 2/3 (pyrochlore?) - 0.1
+a = 0.75, s = 1 - 0.02
+a = 1, s = 1 - 0.02
+a = 1, s = 0.5 (pyrochlore?) - 0.18
+a = 1, s = 1.5 (ordered?) - 0.18
+a = 1, s = 2 - 0.08
+a = 1.5, s = 1/3 (pyrochlore?) - 0.36
+a = 1.5, s = 1 (ordered) - 0.02
+a = 1.5, s = 2 - 0.02
+**extra ones**
+a = 1.5, s = 2/3 - 0.04
+a = 2/3, s = 1.5 - 0.16
+a = 0.25, s = 2 (pyrochlore?) - 0.11
+
+
+todo: look at spins of GS - indeed, spins on bipyramid sum to zero for alpha = 1, sigma = 1
+
+launch a few GS "script"...
+Time taken on Monte Carlo = 3.9725 mins
+SET alpha = 1, for 1000 steepest descent runs...
+Time taken on steepest descent = 12.5727 mins
+Minimum projection = 2 and Maximum deviation = 0+1.7075e-06i
+Time taken to generate matrices P and Q = 0.012449 mins
+Minimum stiffness = 0.002
+diff = 0.004, diff0 = 6.0747e-11, diff1 = 0.037263
+Total time taken on spin wave calculation = 0.08897 mins
+
+Time taken on Monte Carlo = 4.0543 mins
+SET alpha = 1, for 1000 steepest descent runs...
+Time taken on steepest descent = 12.5757 mins
+Minimum projection = 2 and Maximum deviation = 0+1.2074e-06i
+Time taken to generate matrices P and Q = 0.011097 mins
+Minimum stiffness = 0.002
+diff = 0.004, diff0 = 3.3152e-11, diff1 = 0.10731
+Total time taken on spin wave calculation = 0.039353 mins
+
+Time taken on Monte Carlo = 4.0317 mins
+SET alpha = 1, for 1000 steepest descent runs...
+Time taken on steepest descent = 12.9766 mins
+Minimum projection = 2 and Maximum deviation = 0+1.2074e-06i
+Time taken to generate matrices P and Q = 0.011059 mins
+Minimum stiffness = 0.002
+diff = 0.004, diff0 = 4.4436e-11, diff1 = 0.026257
+Total time taken on spin wave calculation = 0.042941 mins
+
+Total time taken = 50.8412 mins
+
+
+
+
+I had proclaimed...
+"One of the things I was to consider is what happens if the spin values were not equal at all sites. I worked out the general case of the spin value at each site being S_i, which are all assumed to be of similar size so that an expansion in powers of 1/S is consistent regardless of which S_i is being used. The classical ground state in this case will still cause the linear term in the quantum Hamiltonian to vanish, and we get a quadratic Hamiltonian as before, except that the diagonal terms in the matrix P in equation (19) is not exactly the local field term anymore (the local field term is a sum weighted by S_j, but the diagonal terms are weighted by \sqrt{S_j}). The matrix diagonalisation and subsequent steps should be unaffected. Thus, I think that aside from complications in introducing a shattered field to ensure stability, the spin wave technique should still mainly work even if the spin values are not all equal."
+
+%% ratio of spin on triangular/kagome = "sigma"
+% also clean up code
+
+%% normalisation conventions
+% J1 = 1, J2 = alpha
+% spin-length on kagome site = 1, spin-length on triangular site = sigma
+% also see lattice conventions below (under "device driver")
+
+%% plan: start with class codes, lattice-specific "device driver" codes, and then work through phases
+% phases are: 1. generating ground states, 2. solving for spin wave frequencies, 3. producing 2D maps.
+** when in production mode, will need to write master scripts that parallelise the Monte Carlo and take average intelligently!
+** for example, when plotting graphs, the parallel systems need to aggregate their frequencies and do cuts based on averages!!
+
+%% class codes
+[Spin.m] (upgraded disturbSpin method to allow non-unit spin)
+[Triad.m] (no changes needed)
+
+%% "device driver" lattice files
+% note that angle between hexagonal lattice 'a' and 'b' is 60 degrees, and 'a' is along x-axis. 'a', 'b', 'c' all of unit length.
+% site 1 at origin, site 2 along 'a', site 3 along 'b'. site 4 apical above, sites 5,6,7 in layer above with triangle pointing down, site 8 apical above.
+% site 5 is at bottom of triangle, anticlockwise to get to 6 then 7.
+[SiteIndex1D.m, SiteIndex3D.m] (to conveniently toggle between 3 indices and 1 index for sites, no changes needed)
+[SitePosition.m] (gives real-space Cartesian position vector to chosen lattice site with 1D index, no changes needed)
+** [LocalField.m] (renamed from CalcLocalField.m!! uses 1D index instead. no major changes as different spin lengths will be used.)
+
+%% data structure decisions
+% store data as 1D array using 1D index, rather than as 3D array (generally speaking)
+
+%% 1. generating ground states (single generation)
+% GenerateGS "uses" MC and AlignSpins
+% Produces final spin configuration and log of energy trajectory (now just produces P, Q as function output)
+** [MonteCarlo.m] (renamed from MC.m!! use 1D index instead. return energy also so wrapper function can coordinate saving.)
+** [SteepestDescent.m] (renamed from AlignSpins.m!! use 1D index instead. also let wrapper function coordinate by returning energy.)
+** [GenerateGS.m] (stick to generating single GS, but save result in ID-ed subfolder. when generating random spins, tune sigma!)
+(4 min and 13 min for MC/SD part, for L=2,M=2)
+
+%% 2. solving for spin wave frequencies ==> mostly fold with generation of ground states?
+% SpinWaves uses ProjectLocalField.m, BuildTriads.m, AdjacencyMatrix.m, CreateMatricesPQ.m, Stiffness.m, SolveSystem.m, CheckSystem.m
+% Produces triads, Omega, f, g for each spin configuration
+** [ProjectLocalField.m] is omitted as unnecessary to calculate Lagrange multipliers!
+** [MeasureGS.m] (created from ProjectLocalField.m as measure of Lagrange multipliers and deviations... ==> folded back with GenerateGS)
+** [BuildTriads.m] (==> folded back with GenerateGS, use 1D index instead. Ensure triad is normalised.)
+** [AdjacencyMatrix.m] (no major changes.)
+** [SpinFactorMatrix.m] (based on AdjacencyMatrix.m, this one is for the sqrt(Si Sj) spin factors.)
+** [CreateMatricesPQ.m] (new matrix elements!!! Need some way to add "shattered field" later ==> fold together with GenerateGS)
+[SpinWaves.m] (Call this after matrices P and Q are generated, diagonalises and checks result... uses Stiffness.m, SolveSystem.m, CheckSystem.m) ==> will NOT fold these so shattered field can be tweaked. **add in shatter (based on scalar product of spin*localField) for Stiffness and SolveSystem, then in CheckSystem the difference in matrix elements should be on the order of shatter**
+** I seem to have problems with Bogoliubov normalisation now... problem also present somewhat for diff1 in old version - leave it for now **
+** [CheckSystem.m] modified to output the entire diff matrices, so can produce colormaps - and problem with normalisation exist in the off-diagonal elements and cannot be controlled.
+***** structure of P and Q are worth studying - P has more weight on triangular sites for sigma > 1. Q has longer-range structure? ******
+
+%% 3. producing 2D maps
+% Need to look at all the spin configurations in order to slice up frequencies.
+% spin correlation function and Fourier transform essentially same, except need to introduce sqrt(Si Sj) factor.
+** [StructureFactor.m] (do NOT include additional sqrt(Si) factor in FTrho!)
+** [AggregateOmega.m] (newly created to better handle "thermal averaging", works fine)
+** [MapPlane.m] (modified to loop over energy ranges and ground states - appears to work reasonably!)
+now to test out reasonableness for non-unit sigma
+
+** [FollowLine.m] ()
+** [DrawHexagon.m] (renamed from hexagon.m)
+** [IncludeFormFactor.m] ()
+** [ModifyFormFactor.m] ()
+** [LogDisperse.m] ()
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%
+Getting to production...
+L = 8, M = 6
+plane = 'hk-2', 'h0l'
+energy ranges: *automatically divide into 4, as appropriate range changes with alpha*  0-0.6, 0.6-1.9, 1.9-3.4, 3.4+ (cap of 4.2 is safe)
+**modified the Q-resolution**
+
+line = 'hh-2', 'h0-2', '0.50l', '1.50l'
+note on checks: for FM, need to randomise shattered field so eigenvectors are orthogonal!
+AvgMaps.m works to average over 2D cuts X, Y, S.
+==============================
+Class files: Spin.m, Triad.m
+Lattice-specific: SiteIndex1D.m, SiteIndex3D.m, CalcLocalField.m, SitePosition.m
+==============================
+Scripts/functions to tackle distinct processes
+0. Master scripts (Step1.m, Step2_hk_2.m, Step2_h0l.m)
+1. Generating ground state configuration: GenerateGS(alpha,L,M,AFM)
+- uses MC.m and AlignSpins.m
+- produces spins
+2. Spin wave decomposition: SpinWaves(spins,alpha,L,M,AFM)
+- uses ProjectLocalField.m, BuildTriads.m, AdjacencyMatrix.m, CreateMatricesPQ.m, Stiffness.m, SolveSystem.m, CheckSystem.m
+- produces triads, Omega, f, g
+3. Structure factor maps: MapPlane(triads,Omega,f,g,L,M,Emin,Emax,plane)
+- uses StructureFactor.m
+- produces X,Y,S for plotting colormaps
+4. Dispersion graphs: FollowLine(triads,Omega,f,g,L,M,Ebins,line)
+- uses StructureFactor.m
+- produces X,W,S for plotting colormaps
+==============================
+
+
+
+
+%%%%%%%%%%%%%%%%%
+overview (quantum)
+------------------
+class files: Spin.m, Triad.m
+lattice conventions: SitePosition (new!), SiteIndex1D.m, SiteIndex3D.m, CalcLocalField.m
+==Monte Carlo: MC.m, [script: AFMalpha1beta1000.m]==
+Steepest descent: AlignSpins.m
+==Spin waves [script: AFMspinwaves.m]==
+check ground state: ProjectLocalField.m
+matrix construction: BuildTriads.m, AdjacencyMatrix.m, CreateMatricesPQ.m
+check stability: Stiffness.m
+diagonalisation, visualisation, normalisation: SolveSystem.m
+checks: CheckSystem.m
+==Various structure factor calculations (scripts for different planes, etc.)==
+spin correlation and dynamic structure factor: StructureFactor.m
+============================================================
+
+AFM
+system size = 10 x 10 x 5
+(4000 spins)
+CreateMatrices took about 75 minutes on tpmacpro250
+FindSWF took about 60 minutes on tpmacpro250
+
+Change code to FM - basically negative beta means FM
+** add "FM" to filenames depending on AFM switch **
+****************
+*** overview ***
+class files: Spin.m, Triad.m (unchanged)
+lattice conventions: SiteIndex1D, SiteIndex3D (unchanged)
+* Monte Carlo code *
+1: MC.m (factor out LocalField code, and add switch AFM=true or false, by checking sign of beta)
+2: make LocalField.m obsolete - just have function CalcLocalField that calculates at single site
+3: script: alpha1beta100.m (modify accordingly)
+* Spin Wave code *
+1: AdjacencyMatrix.m (build positive matrix for FM, negative matrix for AFM - add switch)
+2: ProjectLocalField.m (modify to calculate the local field on the fly)
+3: BuildTriads.m (unchanged)
+4: CreateMatrices.m, FindSWF.m (unchanged - though default NOT to save eigenvectors, only save eigenvalues)
+** change to CreateMatricesReal.m and use real matrices A,B,C instead of P,Q **
+** final function called SolveSystem.m ** [updated this]
+****************
+
+system size = 5 x 5 x 2
+(400 spins)
+
+- test once, script by script
+- then write script to automate entire process
+
+RESULTS:
+when at beta = 100, 56/800 of the stiffnesses are negative, and smallest is about -0.1337
+when at beta = 1000, 39/800 of the stiffnesses are negative, and smallest is about -0.0439

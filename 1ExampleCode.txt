@@ -1,0 +1,41 @@
+generate configurations (with MD)
+
+UID = 'an1e5k1-A'; numSweepMC = 10^5; delta0 = 0.9; alpha = 0.5; K = 4; L = K; M = 50; constrainM = 1; beta = 40; ScriptTS2; ScriptSolveBasic; 
+
+
+
+static
+
+ID='a0.5-b40-s1-4x4x50_an1e5k0-A';
+load([ID,'/correlations2/correlations-_api-col.mat']); c1=avgdotp; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-B';
+load([ID,'/correlations2/correlations-_api-col.mat']); c2=avgdotp; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-C';
+load([ID,'/correlations2/correlations-_api-col.mat']); c3=avgdotp; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-D';
+load([ID,'/correlations2/correlations-_api-col.mat']); c4=avgdotp; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-E';
+load([ID,'/correlations2/correlations-_api-col.mat']); c5=avgdotp; 
+cA = (c1+c2+c3+c4+c5)/5; 
+save('apicol-b40-K0.mat','c1','c2','c3','c4','c5','cA','K','L','M','sites','-mat'); 
+
+[ xis, intercepts ] = LinearFitXi( 'apicol-b10-K0.mat', 0.1 )
+
+
+
+dynamic
+
+ID='a0.5-b40-s1-4x4x50_an1e5k0-A';
+load([ID,'/observables-a0.5-b40-s1-4x4x50_basic.mat']); o1=Atri; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-B';
+load([ID,'/observables-a0.5-b40-s1-4x4x50_basic.mat']); o2=Atri; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-C';
+load([ID,'/observables-a0.5-b40-s1-4x4x50_basic.mat']); o3=Atri; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-D';
+load([ID,'/observables-a0.5-b40-s1-4x4x50_basic.mat']); o4=Atri; 
+ID='a0.5-b40-s1-4x4x50_an1e5k0-E';
+load([ID,'/observables-a0.5-b40-s1-4x4x50_basic.mat']); o5=Atri; 
+oA = (o1+o2+o3+o4+o5)/5; 
+save('atri-b40-K0.mat','o1','o2','o3','o4','o5','oA','T','-mat'); 
+
+[ tconsts, Anoughts ] = LinearFit( 'atri-b20-K1.mat', 10, 50 )
